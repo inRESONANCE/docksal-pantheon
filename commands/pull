@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+set -e
+
+## Run pulling of database 
+##
+## Usage: fin pull [--site=<site>] [--env=<env>] [--db-only] [--files-only]
+##
+## --site: Pantheon Site to use
+## --env: Pantheon Environment to use
+## --db-only: syncs database
+## --files-only: syncs files directory
+
+SITE=$PANTHEON_SITE
+ENV=$PANTHEON_ENVIRONMENT
+ELEMENT=all
+CONFIG=false
+
+if [ -z $ENV ]; then
+  ENV='dev'
+fi
+
+for i in "$@"; do
+  case "$i" in
+    --site=*)
+      SITE=${i#*=}
+      ;;
+    --env=*)
+      ENV=${i#*=}
+      ;;
+    --element=*)
+      ELEMENT=${i#*=}
+      ;;
+    --import-config)
+      CONFIG=true
+      ;;
+  esac;
+done
+
+if [ -z $SITE ]; then
+  echo "PANTEON_SITE must be set within docksal.env settings or provided using the --site"
+  exit 1;
+fi
+
+DOCROOT_PATH="${PROJECT_ROOT}/${DOCROOT}"
+SITEDIR_PATH="${DOCROOT_PATH}/sites/${SITE_DIRECTORY}"
+
+echo 'Waking Environment'
+fin exec -T terminus env:wake $SITE.$ENV
+
+if [[ "$ELEMENT" = "all" || "$ELEMENT" = 'db' ]]; then
+  echo 'Exporting latest database'
+  DBCONN=$(fin exec -T terminus connection:info $SITE.$ENV --field='MySQL Command')
+  DBDUMP=${DBCONN/mysql/mysqldump}
+  if [ -f /tmp/pantheon.sql ]; then
+    rm /tmp/pantheon.sql
+  fi
+  eval $DBDUMP " --result-file=/tmp/pantheon.sql"
+  fin db import /tmp/pantheon.sql
+fi
+
+if [[ "$ELEMENT" = "all" || "$ELEMENT" = 'files' ]]; then
+  cd $SITEDIR_PATH
+  echo "Downloading latest set of files from ${SITE}"
+  fin exec -T terminus rsync ${SITE}.${ENV}:files .
+  echo "Fixing files directory permissions"
+  chmod -R 755 files
+fi
+
+if $CONFIG; then
+  echo "Importing configuration"
+  cd $DOCROOT_PATH
+  pwd
+  fin drush cim -y
+fi

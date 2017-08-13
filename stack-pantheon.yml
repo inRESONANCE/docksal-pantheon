@@ -1,0 +1,84 @@
+version: "2.1"
+
+services:
+  web:
+    image: inresonance/nginx
+    hostname: web
+    volumes:
+      - project_root:/var/www
+    labels:
+      - io.docksal.virtual-host=${VIRTUAL_HOST},*.${VIRTUAL_HOST}
+      - io.docksal.project-root=${PROJECT_ROOT}
+    environment:
+      - FRAMEWORK=${FRAMEWORK:-drupal}
+      - DOCROOT=/var/www/${DOCROOT:-docroot}
+    depends_on:
+      - cli
+    dns:
+      - ${DOCKSAL_DNS1}
+      - ${DOCKSAL_DNS2}
+
+  db:
+    hostname: db
+    image: inresonance/mariadb
+    ports:
+      - "${MYSQL_PORT_MAPPING:-3306}"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-root}
+      - MYSQL_USER=${MYSQL_USER:-user}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-user}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-default}
+    dns:
+      - ${DOCKSAL_DNS1}
+      - ${DOCKSAL_DNS2}
+
+  cli:
+    hostname: cli
+    image: inresonance/cli-pantheon:php-${PHP_VERSION:-7}
+    environment:
+      - HOST_UID=${HOST_UID:-1000}
+      - HOST_GID=${HOST_GID:-100}
+      - XDEBUG_ENABLED=${XDEBUG_ENABLED:-0}
+      - TERMINUS_TOKEN=$TERMINUS_TOKEN
+      - PANTHEON_DATABASE_DATABASE=${MYSQL_DATABASE:-default}
+      - PANTHEON_DATABASE_HOST=db
+      - PANTHEON_DATABASE_PORT=${MYSQL_PORT_MAPPING:-3306}
+      - PANTHEON_DATABASE_USERNAME=${MYSQL_USER:-user}
+      - PANTHEON_DATABASE_PASSWORD=${MYSQL_PASSWORD:-user}
+      - PANTHEON_REDIS_HOST=redis
+      - PANTHEON_REDIS_PORT=6379
+      - PANTHEON_INDEX_HOST=solr
+      - PANTHEON_INDEX_PORT=449
+    volumes:
+      - project_root:/var/www:rw
+      - host_home:/.home:ro
+      - docksal_ssh_agent:/.ssh-agent:ro
+    depends_on:
+      - db
+      - redis
+      - solr
+    dns:
+      - ${DOCKSAL_DNS1}
+      - ${DOCKSAL_DNS2}
+
+  redis:
+    image: inresonance/redis
+    hostname: redis
+    dns:
+      - ${DOCKSAL_DNS1}
+      - ${DOCKSAL_DNS2}
+
+  solr:
+    hostname: solr
+    image: inresonance/solr
+    dns:
+      - ${DOCKSAL_DNS1}
+      - ${DOCKSAL_DNS2}
+
+  varnish:
+    hostname: edge
+    image: inresonance/pantheon-edge
+    labels:
+      - io.docksal.virtual-host=edge.${VIRTUAL_HOST}
+    environment:
+      - DOMAIN=${VIRTUAL_HOST}
